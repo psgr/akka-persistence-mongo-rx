@@ -10,6 +10,8 @@ sbtVersion := "0.13.8"
 
 val AkkaV = "2.3.9"
 
+resolvers += "Typesafe Releases" at "http://repo.typesafe.com/typesafe/releases/"
+
 libraryDependencies ++= Seq(
   "com.github.scullxbones" %% "akka-persistence-mongo-common" % "0.2.4",
   "org.reactivemongo" %% "reactivemongo" % "0.10.5.0.akka23" % "provided",
