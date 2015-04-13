@@ -21,20 +21,34 @@ class RxMongoSnapshotSerialization(implicit serialization: Serialization) extend
       val pid = doc.getAs[String](PROCESSOR_ID).get
       val sn = doc.getAs[Long](SEQUENCE_NUMBER).get
       val timestamp = doc.getAs[Long](TIMESTAMP).get
-      val snapshot = doc.getAs[Array[Byte]](V2.SERIALIZED).get
-      val deserialized = serialization.deserialize(snapshot, classOf[Snapshot]).get
-      SelectedSnapshot(SnapshotMetadata(pid,sn,timestamp),deserialized.data)
+
+      val content = doc.get(V2.SERIALIZED).get match {
+        case b: BSONDocument =>
+          b
+        case _ =>
+          val snapshot = doc.getAs[Array[Byte]](V2.SERIALIZED).get
+          val deserialized = serialization.deserialize(snapshot, classOf[Snapshot]).get
+          deserialized.data
+      }
+
+      SelectedSnapshot(SnapshotMetadata(pid,sn,timestamp),content)
     }
   }
 
   override def write(snap: SelectedSnapshot): BSONDocument = {
-    val content = serialization.serialize(Snapshot(snap.snapshot)).get
+    val content: BSONValue = snap.snapshot match {
+      case b: BSONDocument =>
+        b
+      case _ =>
+        BsonBinaryHandler.write(serialization.serialize(Snapshot(snap.snapshot)).get)
+    }
     BSONDocument(PROCESSOR_ID -> snap.metadata.persistenceId,
       SEQUENCE_NUMBER -> snap.metadata.sequenceNr,
       TIMESTAMP -> snap.metadata.timestamp,
       V2.SERIALIZED -> content)
   }
 
+  @deprecated("Use v2 write instead", "0.3.0")
   def legacyWrite(snap: SelectedSnapshot): BSONDocument = {
     val content = serialization.serialize(snap).get
     BSONDocument(PROCESSOR_ID -> snap.metadata.persistenceId,

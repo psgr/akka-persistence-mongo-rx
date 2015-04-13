@@ -18,23 +18,23 @@ class RxMongoJournaller(driver: RxMongoPersistenceDriver) extends MongoPersisten
   private[this] lazy val writeConcern = driver.journalWriteConcern
 
   implicit object PersistentReprHandler extends BSONDocumentReader[PersistentRepr] with BSONDocumentWriter[PersistentRepr] {
-    val PayloadKey = "payload"
-    val SenderKey = "sender"
-    val RedeliveriesKey = "redeliveries"
-    val ConfirmableKey = "confirmable"
-    val ConfirmMessageKey = "confirmMessage"
-    val ConfirmTargetKey = "confirmTarget"
+    val PayloadKey = "p"
+    val SenderKey = "s"
+    val RedeliveriesKey = "r"
+    val ConfirmableKey = "c"
+    val ConfirmMessageKey = "cm"
+    val ConfirmTargetKey = "ct"
 
     def read(document: BSONDocument): PersistentRepr = {
       val repr: PersistentRepr = document.get(SERIALIZED).get match {
         case b: BSONDocument =>
           PersistentRepr(
             payload = b.get(PayloadKey).get,
-            sender = serialization.deserialize(b.getAsTry[Array[Byte]](SenderKey).get, classOf[ActorRef]).get,
-            redeliveries = b.getAsTry[Int](RedeliveriesKey).get,
-            confirmable = b.getAsTry[Boolean](ConfirmableKey).get,
-            confirmMessage = serialization.deserialize(b.getAsTry[Array[Byte]](ConfirmMessageKey).get, classOf[Delivered]).get,
-            confirmTarget = serialization.deserialize(b.getAsTry[Array[Byte]](ConfirmTargetKey).get, classOf[ActorRef]).get
+            sender = b.getAsTry[Array[Byte]](SenderKey).flatMap(serialization.deserialize(_, classOf[ActorRef])).getOrElse(driver.actorSystem.deadLetters),
+            redeliveries = b.getAsTry[Int](RedeliveriesKey).getOrElse(0),
+            confirmable = b.getAsTry[Boolean](ConfirmableKey).getOrElse(false),
+            confirmMessage = b.getAsTry[Array[Byte]](ConfirmMessageKey).flatMap(serialization.deserialize(_, classOf[Delivered])).getOrElse(null),
+            confirmTarget = b.getAsTry[Array[Byte]](ConfirmTargetKey).flatMap(serialization.deserialize(_, classOf[ActorRef])).getOrElse(null)
           )
         case v =>
           serialization.deserialize(document.getAsTry[Array[Byte]](SERIALIZED).get, classOf[PersistentRepr]).get
@@ -58,14 +58,15 @@ class RxMongoJournaller(driver: RxMongoPersistenceDriver) extends MongoPersisten
     def write(persistent: PersistentRepr): BSONDocument = {
       val content: BSONValue = persistent.payload match {
         case b: BSONDocument =>
-          BSONDocument(
-            PayloadKey -> b,
-            SenderKey -> serialization.serialize(persistent.sender).get,
-            RedeliveriesKey -> persistent.redeliveries,
-            ConfirmableKey -> persistent.confirmable,
-            ConfirmMessageKey -> serialization.serialize(persistent.confirmMessage).get,
-            ConfirmTargetKey -> serialization.serialize(persistent.confirmTarget).get
-          )
+          Seq {
+            Option(persistent.sender).filterNot(_ == driver.actorSystem.deadLetters).flatMap(serialization.serialize(_).toOption).map(SenderKey -> _)
+            Option(persistent.redeliveries).filterNot(_ == 0).map(RedeliveriesKey -> _)
+            Option(persistent.confirmable).filter(identity).map(ConfirmableKey -> _)
+            Option(persistent.confirmMessage).flatMap(serialization.serialize(_).toOption).map(ConfirmMessageKey -> _)
+            Option(persistent.confirmTarget).flatMap(serialization.serialize(_).toOption).map(ConfirmTargetKey -> _)
+          }.collect {
+            case Some(bb) => bb
+          }.map(BSONDocument(_)).foldLeft(BSONDocument(PayloadKey -> b))(_ ++ _)
         case _ =>
           BsonBinaryHandler.write(serialization.serialize(persistent).get)
       }
