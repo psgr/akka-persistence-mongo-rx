@@ -6,6 +6,8 @@ version := "0.1-SNAPSHOT"
 
 scalaVersion := "2.11.6"
 
+crossScalaVersions := Seq("2.10.5", "2.11.6")
+
 sbtVersion := "0.13.8"
 
 val AkkaV = "2.3.9"
