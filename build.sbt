@@ -2,7 +2,7 @@ organization := "me.passenger"
 
 name := "akka-persistence-mongo-rx"
 
-version := "0.1-SNAPSHOT"
+version := "0.1.1-SNAPSHOT"
 
 scalaVersion := "2.11.6"
 
